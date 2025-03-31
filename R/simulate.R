@@ -1,9 +1,12 @@
 library(tidyverse)
 library(faux)
 
+N = 10
+set.seed(100)
+
 # From Table 5 I extracted the mean and SD as IQR/1.35.
 # It is important to match the correct tuple to the correct prog_task_version_phase, therefore I match by name manually
-df_cond = data.frame(
+df_mean_sd = data.frame(
   prog = rep(c("BO","CO","GR","ST"), each=8),
   task = rep(c("Task1","Task2"), each=2, times=8),
   phase = rep(c("Pre","Post"), times=16),
@@ -25,29 +28,13 @@ df_cond = data.frame(
     (27 - 3)/1.35, (26 - 6)/1.35, (56 - 14)/1.35, (22 - 7)/1.35
   )
 )
+# Add the column cond
+df_mean_sd <- df_mean_sd %>% unite("cond", prog, task, phase, version, sep = ".", remove = F)
 
-# Because I wanted to make sure that the 32 mean and sd entries match the correct group, I decided to create a cond vector and pass that one into sim_design.
-# This way I'm sure that the means and sd match the correct group
-
-# Create a single vector with the different conditions
-cond_vector <- df_cond %>% unite(cond, prog, task, phase, version, sep = ".") %>% pull(cond)
-
-df <- faux::sim_design(
-  between = list(
-    "prog_task_phase_version" = cond_vector
-  ),
-  mu =  df_cond$mean,
-  sd = df_cond$sd,
-  n = 10,
-  dv = "time",
-  long = T,
-  empirical = T
-)
-
-# Now add the group according to Figure 1
-matching_groups <- data.frame(
+# Now create the matching of which cond belongs to which group
+df_groups <- data.frame(
   "group" = rep(c("A","B","C","D"), each = 8),
-  "prog_task_phase_version" = c(
+  "cond" = c(
     
     # A
     "ST.Task1.Pre.Pat",
@@ -90,20 +77,104 @@ matching_groups <- data.frame(
     "ST.Task1.Post.Alt"
   )
 )
+# Add seperate columns
+df_groups <- df_groups %>% separate(cond, into = c("prog", "task", "phase", "version"), sep = "\\.", remove = F)
 
-df <- merge(matching_groups, df)
+# Because I wanted to make sure that the 32 mean and sd entries match the correct group, I decided to match on the cond column
+# This way I'm sure that the means and sd match the correct group
+df_cond <- merge(df_mean_sd, df_groups)
 
-# Separate the artificial column again
-df <- df %>% separate(prog_task_phase_version, into = c("prog", "task", "phase", "version"), sep = "\\.")
+df_subjects <- data.frame(
+  id = 1:(4*N),
+  group = rep(c("A", "B", "C", "D"), each = N)
+)
 
-# Drop the id column, not relevant for further analysis
+
+df <- faux::sim_design(
+  between = list(
+    cond = df_cond$cond
+  ),
+  mu = df_cond$mean,
+  sd = df_cond$sd,
+  n = N,
+  dv = "time",
+  long=T,
+  empirical=F
+)
+
+# Split cond
+df <- df %>% separate(cond, into = c("prog", "task", "phase", "version"), sep = "\\.", remove = T)
+
+# Drop the false ID column
 df <- df %>% select(-id)
 
-dim(df) # Should be 320 x 6
+# Add the group
+df <- merge(df, df_groups)
 
-# Reorder columns
-df <- df %>% relocate(group, prog, task, phase, version, time)
+# Add the N user IDs, each group has 8 conditions. So each user should have 8 rows
+df <- df %>% arrange(group, cond) %>% mutate(subject_id = rep(c(1:N), 32))
+
+# Rearrange columns
+df <- df %>% relocate(subject_id, group, prog, task, phase, version, time)
+
+# Drop cond
+df <- df %>% select(-cond)
 
 # Manually inspect some means and sd to make sure nothing got mixed up
-print(n=100, df %>% filter(prog == "BO") %>% group_by(prog, task, phase, version) %>% summarise(mean(time), sd(time)))
-print(n=100, df %>% filter(prog == "GR") %>% group_by(prog, task, phase, version) %>% summarise(mean(time), sd(time)))
+df %>% filter(prog == "GR") %>%
+  group_by(prog, task, phase, version) %>%
+  summarise(mean(time), sd(time)) %>%
+  arrange(prog, version, task, desc(phase))
+
+
+
+# ###
+# # MANUAL APPROACH
+# # Pro: Easier to understand than faux imo for this specific design
+# # Contra: The rnorm will not guarantee an empirical mean and sd, because we only draw 10 samples each
+# 
+# # At this point, I tried to make faux work with what I wanted (10 subjects per group, each subject is exposed to 8 unique conditions, each of the 32 conditions
+# # has its own mean and sd). But I failed, so I figured I can also produce the simulated data by hand
+# sim_data = list()
+# ct <- 1
+# for (s_id in 1:nrow(df_subjects)) {
+#   s_group = df_subjects %>% filter(id == s_id) %>% pull(group)
+#   s_conds = df_cond %>% filter(group == s_group) %>% pull(cond)
+#   
+#   for (s_cond in s_conds) {
+#     s_mean_sd <- df_mean_sd %>% filter(cond == s_cond)
+#     
+#     # Draw from normal distribution
+#     s_time = rnorm(n = 1, s_mean_sd$mean, s_mean_sd$sd)
+#     
+#     # Add row
+#     sim_data[[ct]] <- data.frame(
+#       id = s_id,
+#       group = s_group,
+#       prog = s_mean_sd$prog,
+#       task = s_mean_sd$task,
+#       phase = s_mean_sd$phase,
+#       version = s_mean_sd$version,
+#       time = s_time
+#     )
+#     ct <- ct + 1
+#   }
+# }
+# 
+# df <- do.call(rbind, sim_data)
+# 
+# dim(df)
+# head(df)
+# 
+# # Manually inspect some means and sd to make sure nothing got mixed up
+# df %>% filter(prog == "BO") %>% group_by(prog, task, phase, version) %>% summarise(mean(time), sd(time))
+# df %>% filter(prog == "GR") %>%
+#   group_by(prog, task, phase, version) %>%
+#   summarise(mean(time), sd(time)) %>% 
+#   arrange(prog, version, task, desc(phase))
+# 
+
+
+
+
+
