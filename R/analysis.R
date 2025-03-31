@@ -8,9 +8,7 @@ import::from(afex, lmer_alt)
 
 
 # Load the simulated DF
-source("./R/simulate.R")
-head(df)
-dim(df)
+df <- read.csv("data/data1.csv")
 
 # Convert to factors for modelling
 # For phase, set Pre as the baseline (1. level)
