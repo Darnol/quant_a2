@@ -252,11 +252,12 @@ summary(m_vers_phase)
 tidy(m_vers_phase, conf.int = T)
 anova(m_vers_phase)
 
+
 # Here I tried to fit a mixed effects model -> Singularity issue I cannot solve
 mm <- lme4::lmer(time ~ version * phase + (1 + version + phase|subject_id), data = df_to_analyze)
 print(mm)
 
-# Post-hoc main effects on the interaction model
+# Post-hoc main effects on the interaction model without random effects
 emm_interaction = emmeans(m_vers_phase, ~ version * phase)
 contr_cond = contrast(emm_interaction, "pairwise", simple = "each", combine = TRUE, adjust = "holm")
 contr_cond
@@ -292,7 +293,7 @@ anova(m_vers_phase)
 mm <- lme4::lmer(time ~ version * phase + (1 + version + phase|subject_id), data = df_to_analyze)
 print(mm)
 
-# Post-hoc main effects on the interaction model
+# Post-hoc main effects on the interaction model without random effects
 emm_interaction = emmeans(m_vers_phase, ~ version * phase)
 contr_cond = contrast(emm_interaction, "pairwise", simple = "each", combine = TRUE, adjust = "holm")
 contr_cond

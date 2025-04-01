@@ -126,7 +126,7 @@ df %>% filter(prog == "GR") %>%
   summarise(mean(time), sd(time)) %>%
   arrange(prog, version, task, desc(phase))
 
-write.csv(df, "data/data1.csv")
+write.csv(df, "data/data1.csv", row.names=F)
 
 
 # ###
